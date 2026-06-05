@@ -8,7 +8,7 @@ SunCast ist ein eigenständiger Open-Source-Bot der Sonnenaufgang, Sonnenunterga
 
 ---
 
-![SunCast Dashboard – Tagsüber](docs/screenshots/heute-tag.png)
+![SunCast Hero](docs/screenshots/hero.png)
 
 ---
 
@@ -50,11 +50,10 @@ Standort setzen, Dämmerungsbezeichnung konfigurieren, zwischen Simulator und Li
 
 | Komponente | Modell | Funktion |
 |---|---|---|
-| Raspberry Pi | 3B+ (bereits vorhanden) | Hauptrechner, läuft parallel zu WarnBridge |
+| Raspberry Pi | 3B+ oder besser | Hauptrechner |
 | MeshCore-Node | Heltec WiFi LoRa 32 v3 | Eigener Node „SunCast" im Mesh |
 | USB-Kabel | Micro-USB | Stromversorgung Heltec |
 
-SunCast läuft als eigenständiger Prozess neben [WarnBridge](https://github.com/TogeriX-hub/dab-warnings-meshcore) auf demselben Pi – eigener Port (8081), eigener MeshCore-Node.
 
 ---
 
@@ -139,19 +138,12 @@ Alle Antworten sind auf 120 Zeichen begrenzt (MeshCore-Limit). Bei längeren Ant
 
 ---
 
-## Im echten Mesh
-
-![SunCast im MeshCore-Chat](docs/screenshots/mesh-chat.png)
-
-SunCast erscheint im Mesh unter dem Node-Namen **„SunCast"** und antwortet nur auf direkte Anfragen – kein automatischer Broadcast.
-
----
 
 ## Verwandte Projekte
 
 | Projekt | Beschreibung |
 |---------|-------------|
-| [WarnBridge](https://github.com/TogeriX-hub/dab-warnings-meshcore) | DAB+-Notfallwarnungs-Bot, läuft parallel auf demselben Pi |
+| [WarnBridge](https://github.com/TogeriX-hub/dab-warnings-meshcore) | DAB+-Notfallwarnungs-Bot |
 | [FieldMesh](https://github.com/TogeriX-hub/FieldMesh) | MeshCore-Firmware-Fork für Off-Grid-Einsatz |
 | [astral](https://pypi.org/project/astral/) | Python-Bibliothek für astronomische Berechnungen |
 
@@ -172,4 +164,3 @@ suncast.service     – systemd Autostart
 
 ---
 
-*Tobias / Sindelfingen · Juni 2026*
