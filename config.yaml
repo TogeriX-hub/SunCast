@@ -1,0 +1,16 @@
+bot:
+  max_response_messages: 2
+  twilight_label: Tageslicht bis
+dashboard:
+  port: 8081
+location:
+  default: Stuttgart
+  lat: 0.0
+  lon: 0.0
+  timezone: Europe/Berlin
+meshcore:
+  channel_idx: 0
+  host: 192.168.4.2
+  port: 4403
+  scope: '*'
+  simulator: true

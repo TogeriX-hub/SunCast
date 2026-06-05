@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SunCast</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg:       #f0f2f5;
+    --surface:  #ffffff;
+    --border:   #dde1e7;
+    --text:     #1a2332;
+    --text2:    #4a5568;
+    --muted:    #8a95a3;
+    --sun:      #e6c84a;
+    --sun-dk:   #b8960a;
+    --dawn:     #e8905a;
+    --dusk:     #9b6ec8;
+    --moon:     #5a7a9b;
+    --mono:     'DM Mono', monospace;
+    --sans:     'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans);
+         font-size: 13px; line-height: 1.5; height: 100vh; overflow: hidden; }
+
+  /* Header */
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 24px; height: 48px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .logo { font-size: 15px; font-weight: 600; color: var(--text); }
+  .logo em { font-style: normal; color: var(--sun-dk); }
+  .logo-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .hfill { flex: 1; }
+  #sim-badge {
+    font-family: var(--mono); font-size: 9px; padding: 2px 8px;
+    border-radius: 3px; background: #fff8e1; color: #8a6d00;
+    border: 1px solid #e6c84a; letter-spacing: 0.06em; display: none;
+  }
+  #sim-badge.on { display: block; }
+  #conn-dot { width: 7px; height: 7px; border-radius: 50%; background: #c8cdd6; }
+  #conn-dot.ok  { background: #52b788; box-shadow: 0 0 5px rgba(82,183,136,0.5); }
+  #conn-dot.err { background: #e05252; }
+
+  /* Nav */
+  nav {
+    display: flex; background: var(--surface);
+    border-bottom: 1px solid var(--border); padding: 0 24px; height: 38px;
+  }
+  .tab {
+    font-size: 12px; font-weight: 500; padding: 0 16px; cursor: pointer;
+    color: var(--muted); border-bottom: 2px solid transparent;
+    display: flex; align-items: center;
+    transition: color 0.15s, border-color 0.15s; user-select: none;
+  }
+  .tab:hover { color: var(--text2); }
+  .tab.active { color: var(--text); border-bottom-color: var(--sun-dk); }
+
+  /* Panels */
+  .panel { display: none; height: calc(100vh - 86px); }
+  .panel.active { display: flex; }
+
+  /* ── HEUTE ── */
+  #panel-heute { flex-direction: row; }
+
+  .sky-area {
+    flex: 1; position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 28px;
+    /* subtle sky gradient – fixed, not from canvas */
+    background: #cfe8f7; /* set dynamically by JS */
+  }
+
+  #arc-canvas {
+    /* fixed comfortable size, centered */
+    width: min(640px, 88%);
+    height: min(260px, 44%);
+    display: block;
+    /* canvas bg is transparent */
+  }
+
+  .sky-footer {
+    display: flex;
+    background: rgba(255,255,255,0.82);
+    border: 1px solid rgba(255,255,255,0.9);
+    border-radius: 14px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+  }
+  .ft-item {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 11px 22px; gap: 2px; position: relative;
+  }
+  .ft-item + .ft-item { border-left: 1px solid rgba(0,0,0,0.07); }
+  .ft-item.now { background: rgba(230,200,74,0.15); }
+  .ft-val {
+    font-family: var(--mono); font-size: 17px; font-weight: 400;
+    color: var(--text); letter-spacing: 0.02em;
+  }
+  .ft-val.c-dawn { color: var(--dawn); }
+  .ft-val.c-sun  { color: var(--sun-dk); font-weight: 500; }
+  .ft-val.c-now  { font-size: 22px; }
+  .ft-val.c-dusk { color: var(--dusk); }
+  .ft-label { font-size: 10px; color: var(--muted); white-space: nowrap; }
+
+  .loc-label {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; font-weight: 500; color: var(--text2);
+    background: rgba(255,255,255,0.75); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px 12px;
+    backdrop-filter: blur(4px); white-space: nowrap; z-index: 1;
+  }
+
+  /* Right info panel */
+  .info-side {
+    width: 264px; border-left: 1px solid var(--border);
+    background: var(--surface); overflow-y: auto; flex-shrink: 0;
+  }
+  .info-side::-webkit-scrollbar { width: 3px; }
+  .info-side::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .iblock { padding: 15px 18px 12px; border-bottom: 1px solid var(--border); }
+  .iblock:last-child { border-bottom: none; }
+  .iblock-title {
+    font-size: 9px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px;
+  }
+  .irow {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 0; border-bottom: 1px solid var(--border);
+  }
+  .irow:last-of-type { border-bottom: none; }
+  .irow-icon { font-size: 12px; width: 16px; text-align: center; flex-shrink: 0; }
+  .irow-label { font-size: 11px; color: var(--text2); flex: 1; }
+  .irow-val { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--text); }
+  .irow-val.sun  { color: var(--sun-dk); }
+  .irow-val.dawn { color: var(--dawn); }
+  .irow-val.dusk { color: var(--dusk); }
+  .irow-val.moon { color: var(--moon); }
+
+  .daybar { height: 3px; background: #e8eaed; border-radius: 2px; margin: 10px 0 5px; overflow: hidden; }
+  .daybar-fill { height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, var(--dawn), var(--sun) 60%, var(--dusk)); }
+  .daybar-label { font-family: var(--mono); font-size: 9px; color: var(--muted); }
+
+  .moon-row { display: flex; align-items: center; gap: 10px; padding: 4px 0 8px; }
+  .moon-glyph { font-size: 24px; }
+  .moon-name { font-size: 13px; font-weight: 500; color: var(--moon); }
+  .moon-pct  { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+  /* ── SIMULATOR ── */
+  #panel-sim { flex-direction: column; }
+  .sim-top {
+    padding: 14px 24px 12px; border-bottom: 1px solid var(--border);
+    background: var(--surface); flex-shrink: 0;
+  }
+  .sim-top-label { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  .sim-row { display: flex; gap: 8px; }
+  .sim-input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 8px 12px; outline: none; transition: border-color 0.15s;
+  }
+  .sim-input:focus { border-color: var(--sun); box-shadow: 0 0 0 3px rgba(230,200,74,0.15); }
+  .sim-input::placeholder { color: var(--muted); }
+  .sim-btn {
+    background: var(--sun); border: none; border-radius: 6px; color: var(--text);
+    font-size: 12px; font-weight: 600; padding: 8px 18px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .sim-btn:hover { background: #d4b432; }
+  .qcmds { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 9px; }
+  .qcmd {
+    font-family: var(--mono); font-size: 10px; padding: 3px 9px; border-radius: 4px;
+    background: var(--bg); border: 1px solid var(--border); color: var(--text2);
+    cursor: pointer; transition: border-color 0.1s; user-select: none;
+  }
+  .qcmd:hover { border-color: var(--sun); color: var(--text); }
+  .sim-log {
+    flex: 1; overflow-y: auto; padding: 16px 24px;
+    display: flex; flex-direction: column; gap: 10px; background: var(--bg);
+  }
+  .sim-entry {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .sim-cmd-row { display: flex; align-items: baseline; gap: 8px; }
+  .sim-ts  { font-family: var(--mono); font-size: 9px; color: var(--muted); flex-shrink: 0; }
+  .sim-who { font-family: var(--mono); font-size: 9px; color: var(--muted); }
+  .sim-cmd { font-family: var(--mono); font-size: 12px; color: var(--text); font-weight: 500; }
+  .sim-resp-row { display: flex; gap: 8px; padding-left: 4px; }
+  .sim-arrow { font-size: 10px; color: var(--muted); }
+  .sim-resp { font-family: var(--mono); font-size: 12px; color: var(--sun-dk); line-height: 1.6; }
+  .sim-empty { font-size: 12px; color: var(--muted); text-align: center; margin-top: 40px; }
+
+  /* ── SETTINGS ── */
+  #panel-settings {
+    overflow-y: auto; padding: 24px; display: block !important; background: var(--bg);
+  }
+  .settings-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; max-width: 700px; }
+  .scard {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  }
+  .scard.full { grid-column: 1 / -1; }
+  .scard-title {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--muted); margin-bottom: 14px;
+  }
+  .fgroup { margin-bottom: 12px; }
+  .flabel { font-size: 10px; font-weight: 500; color: var(--text2); margin-bottom: 4px; }
+  .finput, .fselect {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 8px 10px; outline: none; transition: border-color 0.15s; appearance: none;
+  }
+  .finput:focus, .fselect:focus { border-color: var(--sun); box-shadow: 0 0 0 3px rgba(230,200,74,0.15); }
+  .sbtn {
+    background: var(--sun); border: none; border-radius: 6px; color: var(--text);
+    font-size: 12px; font-weight: 600; padding: 8px 20px;
+    cursor: pointer; margin-top: 4px; transition: background 0.15s;
+  }
+  .sbtn:hover { background: #d4b432; }
+  #save-ok { font-size: 11px; color: #2d8a5e; margin-left: 10px; opacity: 0; transition: opacity 0.3s; }
+  #save-ok.on { opacity: 1; }
+  .strow {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 0; border-bottom: 1px solid var(--border);
+  }
+  .strow:last-child { border-bottom: none; }
+  .stkey { font-size: 11px; color: var(--text2); }
+  .stval { font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .stval.sim { color: #8a6d00; }
+  .stval.ok  { color: #2d8a5e; }
+  .mesh-toggle-row {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .mode-toggle {
+    display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+  }
+  .mode-btn {
+    padding: 6px 14px; font-size: 11px; font-weight: 500; border: none;
+    background: var(--bg); color: var(--muted); cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .mode-btn.active { background: var(--sun); color: var(--text); }
+  .mesh-status-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex-shrink: 0;
+  }
+  .mesh-status-dot.ok  { background: #52b788; box-shadow: 0 0 5px rgba(82,183,136,0.5); }
+  .mesh-status-dot.err { background: #e05252; }
+  .mesh-status-dot.sim { background: var(--sun); }
+  .mesh-status-txt { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+    font-family: var(--mono); font-size: 10px; color: var(--sun-dk);
+    background: #fffde7; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid #e6c84a; margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">☀ Sun<em>Cast</em></div>
+  <span style="color:var(--border);margin:0 6px">·</span>
+  <div class="logo-sub">Astronomische Lichtzeiten · Offline · MeshCore</div>
+  <div class="hfill"></div>
+  <span id="sim-badge">SIMULATOR</span>
+  <div id="conn-dot"></div>
+</header>
+
+<nav>
+  <div class="tab active" data-tab="heute">Heute</div>
+  <div class="tab" data-tab="sim">Simulator</div>
+  <div class="tab" data-tab="settings">Einstellungen</div>
+</nav>
+
+<!-- HEUTE -->
+<div id="panel-heute" class="panel active">
+  <div class="sky-area">
+    <div class="loc-label" id="loc-label">—</div>
+    <canvas id="arc-canvas"></canvas>
+    <div class="sky-footer">
+      <div class="ft-item">
+        <div class="ft-val c-dawn" id="ft-dawn">–</div>
+        <div class="ft-label">Dämmerung</div>
+      </div>
+      <div class="ft-item">
+        <div class="ft-val c-sun" id="ft-sunrise">–</div>
+        <div class="ft-label">Aufgang</div>
+      </div>
+      <div class="ft-item now">
+        <div class="ft-val c-now" id="ft-now">–</div>
+        <div class="ft-label">Jetzt</div>
+      </div>
+      <div class="ft-item">
+        <div class="ft-val c-sun" id="ft-sunset">–</div>
+        <div class="ft-label">Untergang</div>
+      </div>
+      <div class="ft-item">
+        <div class="ft-val c-dusk" id="ft-dusk">–</div>
+        <div class="ft-label" id="ft-dusk-label">Tageslicht bis</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-side">
+    <div class="iblock">
+      <div class="iblock-title">Heute</div>
+      <div class="irow">
+        <span class="irow-icon">🌅</span>
+        <span class="irow-label">Sonnenaufgang</span>
+        <span class="irow-val sun" id="i-sunrise">–</span>
+      </div>
+      <div class="irow">
+        <span class="irow-icon">🌇</span>
+        <span class="irow-label">Sonnenuntergang</span>
+        <span class="irow-val sun" id="i-sunset">–</span>
+      </div>
+      <div class="irow">
+        <span class="irow-icon">🌤</span>
+        <span class="irow-label">Dämmerungsbeginn</span>
+        <span class="irow-val dawn" id="i-dawn">–</span>
+      </div>
+      <div class="irow">
+        <span class="irow-icon">🔦</span>
+        <span class="irow-label" id="i-dusk-label">Tageslicht bis</span>
+        <span class="irow-val dusk" id="i-dusk">–</span>
+      </div>
+      <div class="daybar"><div class="daybar-fill" id="daybar-fill" style="width:0%"></div></div>
+      <div class="daybar-label" id="daybar-label">–</div>
+    </div>
+    <div class="iblock">
+      <div class="iblock-title">Mond</div>
+      <div class="moon-row">
+        <div class="moon-glyph" id="moon-glyph">🌙</div>
+        <div>
+          <div class="moon-name" id="moon-name">–</div>
+          <div class="moon-pct"  id="moon-pct">–</div>
+        </div>
+      </div>
+      <div class="irow">
+        <span class="irow-icon">↑</span>
+        <span class="irow-label">Mondaufgang</span>
+        <span class="irow-val moon" id="i-moon-rise">–</span>
+      </div>
+      <div class="irow">
+        <span class="irow-icon">↓</span>
+        <span class="irow-label">Monduntergang</span>
+        <span class="irow-val moon" id="i-moon-set">–</span>
+      </div>
+    </div>
+    <div class="iblock">
+      <div class="iblock-title">Morgen</div>
+      <div class="irow">
+        <span class="irow-icon">🌅</span>
+        <span class="irow-label">Aufgang</span>
+        <span class="irow-val sun" id="i-tom-rise">–</span>
+      </div>
+      <div class="irow">
+        <span class="irow-icon">🌇</span>
+        <span class="irow-label">Untergang</span>
+        <span class="irow-val sun" id="i-tom-set">–</span>
+      </div>
+      <div class="irow">
+        <span class="irow-icon">🔦</span>
+        <span class="irow-label">Tageslicht bis</span>
+        <span class="irow-val dusk" id="i-tom-dusk">–</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SIMULATOR -->
+<div id="panel-sim" class="panel">
+  <div class="sim-top">
+    <div class="sim-top-label">Bot-Simulator – Befehle testen ohne MeshCore-Node</div>
+    <div class="sim-row">
+      <input class="sim-input" id="sim-input" type="text"
+        placeholder="/sonne Stuttgart  ·  /mond  ·  /tag Stuttgart"
+        autocomplete="off" spellcheck="false"/>
+      <button class="sim-btn" id="sim-send">Senden ↵</button>
+    </div>
+    <div class="qcmds">
+      <span class="qcmd" data-cmd="/sonne Stuttgart">/sonne Stuttgart</span>
+      <span class="qcmd" data-cmd="/sonne Stuttgart 21.06">/sonne 21.06</span>
+      <span class="qcmd" data-cmd="/sonne Stuttgart 24.12">/sonne 24.12</span>
+      <span class="qcmd" data-cmd="/mond">/mond</span>
+      <span class="qcmd" data-cmd="/mond 24.12">/mond 24.12</span>
+      <span class="qcmd" data-cmd="/tag Stuttgart">/tag Stuttgart</span>
+      <span class="qcmd" data-cmd="/hilfe">/hilfe</span>
+    </div>
+  </div>
+  <div class="sim-log" id="sim-log">
+    <div class="sim-empty" id="sim-empty">Befehl eingeben und Enter drücken…</div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="panel-settings" class="panel">
+  <div class="settings-wrap">
+    <div class="scard">
+      <div class="scard-title">Standard-Standort</div>
+      <div class="fgroup">
+        <div class="flabel">Stadtname</div>
+        <input class="finput" id="cfg-city" type="text" placeholder="Stuttgart" autocomplete="off"/>
+      </div>
+      <div class="fgroup">
+        <div class="flabel">oder Latitude</div>
+        <input class="finput" id="cfg-lat" type="text" placeholder="48.7758"/>
+      </div>
+      <div class="fgroup">
+        <div class="flabel">Longitude</div>
+        <input class="finput" id="cfg-lon" type="text" placeholder="9.1829"/>
+      </div>
+      <button class="sbtn" id="save-loc">Speichern</button>
+      <span id="save-ok">✓ Gespeichert</span>
+    </div>
+    <div class="scard">
+      <div class="scard-title">Bot-Einstellungen</div>
+      <div class="fgroup">
+        <div class="flabel">Dämmerungsbezeichnung</div>
+        <select class="fselect" id="cfg-label">
+          <option value="Tageslicht bis">Tageslicht bis</option>
+          <option value="Taschenlampe ab">Taschenlampe ab</option>
+        </select>
+      </div>
+      <div class="flabel" style="margin-top:8px">Vorschau</div>
+      <div class="preview-box" id="cfg-preview">–</div>
+      <button class="sbtn" id="save-bot" style="margin-top:14px">Speichern</button>
+    </div>
+
+    <!-- MeshCore -->
+    <div class="scard full">
+      <div class="scard-title">MeshCore-Verbindung</div>
+      <div class="mesh-toggle-row">
+        <span class="flabel" style="margin:0">Modus</span>
+        <div class="mode-toggle" id="mode-toggle">
+          <button class="mode-btn active" id="btn-sim" onclick="setMode(true)">Simulator</button>
+          <button class="mode-btn"        id="btn-real" onclick="setMode(false)">MeshCore Live</button>
+        </div>
+        <span class="mesh-status-dot" id="mesh-dot"></span>
+        <span class="mesh-status-txt" id="mesh-status-txt">–</span>
+      </div>
+      <div id="mesh-real-fields" style="display:none;margin-top:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="fgroup">
+            <div class="flabel">Host (IP des Heltec #2)</div>
+            <input class="finput" id="cfg-host" type="text" placeholder="192.168.4.2"/>
+          </div>
+          <div class="fgroup">
+            <div class="flabel">Port</div>
+            <input class="finput" id="cfg-port" type="text" placeholder="4403"/>
+          </div>
+          <div class="fgroup">
+            <div class="flabel">Channel-Index</div>
+            <input class="finput" id="cfg-chanidx" type="text" placeholder="0"/>
+          </div>
+          <div class="fgroup">
+            <div class="flabel">Flood-Scope</div>
+            <input class="finput" id="cfg-scope" type="text" placeholder="*"/>
+          </div>
+        </div>
+      </div>
+      <button class="sbtn" id="save-mesh" style="margin-top:14px">Übernehmen & Verbinden</button>
+      <span id="save-mesh-ok" style="font-size:11px;color:#2d8a5e;margin-left:10px;opacity:0;transition:opacity .3s">✓ Gespeichert</span>
+    </div>
+
+    <div class="scard full">
+      <div class="scard-title">System-Status</div>
+      <div class="strow"><span class="stkey">Modus</span><span class="stval sim" id="st-mode">–</span></div>
+      <div class="strow"><span class="stkey">MeshCore</span><span class="stval" id="st-mesh">–</span></div>
+      <div class="strow"><span class="stkey">Uptime</span><span class="stval" id="st-uptime">–</span></div>
+      <div class="strow"><span class="stkey">Letzter Befehl</span><span class="stval" id="st-cmd">–</span></div>
+      <div class="strow"><span class="stkey">Letzte Antwort</span><span class="stval" id="st-resp">–</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Tabs
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  $('panel-' + t.dataset.tab).classList.add('active');
+  if(t.dataset.tab === 'settings') loadStatus();
+}));
+
+// ── Arc drawing ────────────────────────────────────────────────────────────
+let todayData = null;
+
+function timeToMin(hhmm){
+  if(!hhmm || hhmm==='–') return null;
+  const [h,m] = hhmm.split(':').map(Number);
+  return h*60+m;
+}
+
+function drawArc(data){
+  const canvas = $('arc-canvas');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+  if(!W || !H) return;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const riseMin = timeToMin(data.sunrise);
+  const setMin  = timeToMin(data.sunset);
+  const dawnMin = timeToMin(data.dawn);
+  const duskMin = timeToMin(data.dusk);
+  const nowMin  = timeToMin(data.now);
+  if(riseMin===null || setMin===null) return;
+
+  // X-axis window: 90 min before dawn to 90 min after dusk
+  const PAD_MIN = 90;
+  const winStart = (dawnMin||riseMin) - PAD_MIN;
+  const winEnd   = (duskMin||setMin)  + PAD_MIN;
+  const winSpan  = winEnd - winStart;
+
+  const PAD_X = 32, PAD_TOP = 16, PAD_BOT = 28;
+  const LEFT  = PAD_X;
+  const RIGHT = W - PAD_X;
+  const BASE  = H - PAD_BOT;   // horizon y
+  const TOP   = PAD_TOP;       // arc peak y
+
+  function minToX(m){ return LEFT + ((m - winStart) / winSpan) * (RIGHT - LEFT); }
+
+  // arc y for a given minute (sine between rise and set)
+  function arcY(m){
+    const t = (m - riseMin) / (setMin - riseMin);
+    if(t <= 0 || t >= 1) return BASE;
+    return BASE - (BASE - TOP) * Math.sin(Math.PI * t);
+  }
+
+  // ── horizon line ──
+  ctx.strokeStyle = 'rgba(180,200,190,0.6)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(0, BASE); ctx.lineTo(W, BASE);
+  ctx.stroke();
+
+  // ── hour labels on horizon ──
+  ctx.font = '9px DM Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(90,110,130,0.7)';
+  // find first full hour in window
+  const firstH = Math.ceil(winStart / 60);
+  const lastH  = Math.floor(winEnd  / 60);
+  for(let h = firstH; h <= lastH; h++){
+    const x = minToX(h * 60);
+    if(x < LEFT || x > RIGHT) continue;
+    ctx.fillRect(x - 0.5, BASE, 1, 4);
+    if(h % 3 === 0){
+      ctx.fillStyle = 'rgba(90,110,130,0.55)';
+      ctx.fillText(String(h).padStart(2,'0')+':00', x, BASE + PAD_BOT - 6);
+      ctx.fillStyle = 'rgba(90,110,130,0.7)';
+    }
+  }
+
+  // ── twilight zones (coloured segments on horizon) ──
+  function horizonSegment(mA, mB, color){
+    if(mA===null || mB===null) return;
+    const x1 = minToX(mA), x2 = minToX(mB);
+    ctx.fillStyle = color;
+    ctx.fillRect(x1, BASE - 2, x2 - x1, 4);
+  }
+  horizonSegment(dawnMin, riseMin, 'rgba(232,144,90,0.55)');
+  horizonSegment(riseMin, setMin,  'rgba(230,200,74,0.45)');
+  horizonSegment(setMin,  duskMin, 'rgba(155,110,200,0.55)');
+
+  // ── glow fill under arc ──
+  const fillG = ctx.createLinearGradient(0, TOP, 0, BASE);
+  fillG.addColorStop(0,   'rgba(230,200,74,0.18)');
+  fillG.addColorStop(0.7, 'rgba(230,200,74,0.06)');
+  fillG.addColorStop(1,   'rgba(230,200,74,0)');
+  ctx.beginPath();
+  ctx.fillStyle = fillG;
+  const STEPS = 100;
+  ctx.moveTo(minToX(riseMin), BASE);
+  for(let i = 0; i <= STEPS; i++){
+    const m = riseMin + (setMin - riseMin) * (i / STEPS);
+    ctx.lineTo(minToX(m), arcY(m));
+  }
+  ctx.lineTo(minToX(setMin), BASE);
+  ctx.closePath();
+  ctx.fill();
+
+  // ── dawn / day / dusk arcs ──
+  function drawSeg(mA, mB, color, lw){
+    if(mA===null || mB===null) return;
+    const clampA = Math.max(mA, riseMin - (riseMin - mA));  // allow below horizon
+    ctx.beginPath();
+    ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round';
+    ctx.setLineDash([]);
+    const steps = 60;
+    for(let i = 0; i <= steps; i++){
+      const m = mA + (mB - mA) * (i / steps);
+      const x = minToX(m);
+      // below-horizon segments stay at BASE
+      const y = (m < riseMin || m > setMin) ? BASE : arcY(m);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  if(dawnMin!==null) drawSeg(dawnMin, riseMin, 'rgba(232,144,90,0.75)', 2);
+  drawSeg(riseMin, setMin, '#c0960e', 2.5);
+  if(duskMin!==null) drawSeg(setMin, duskMin, 'rgba(155,110,200,0.75)', 2);
+
+  // ── sunrise / sunset markers ──
+  [riseMin, setMin].forEach(m => {
+    const x = minToX(m);
+    ctx.beginPath(); ctx.arc(x, BASE, 5, 0, Math.PI*2);
+    ctx.fillStyle = '#c0960e'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, BASE, 2.5, 0, Math.PI*2);
+    ctx.fillStyle = '#fff'; ctx.fill();
+  });
+
+  // ── now: sun dot ──
+  if(nowMin !== null){
+    const nx = minToX(nowMin);
+    const ny = (nowMin >= riseMin && nowMin <= setMin) ? arcY(nowMin) : BASE;
+    const isDay = nowMin >= riseMin && nowMin <= setMin;
+
+    // soft glow
+    const gr = ctx.createRadialGradient(nx, ny, 0, nx, ny, isDay ? 28 : 16);
+    gr.addColorStop(0, isDay ? 'rgba(230,200,74,0.35)' : 'rgba(100,140,200,0.25)');
+    gr.addColorStop(1, 'rgba(230,200,74,0)');
+    ctx.beginPath(); ctx.arc(nx, ny, isDay ? 28 : 16, 0, Math.PI*2);
+    ctx.fillStyle = gr; ctx.fill();
+
+    // disc
+    ctx.beginPath(); ctx.arc(nx, ny, isDay ? 7 : 5, 0, Math.PI*2);
+    ctx.fillStyle = isDay ? '#e6c84a' : '#7090c0'; ctx.fill();
+    ctx.beginPath(); ctx.arc(nx, ny, isDay ? 3.5 : 2.5, 0, Math.PI*2);
+    ctx.fillStyle = '#fff'; ctx.fill();
+  }
+}
+
+// ── Info panel ─────────────────────────────────────────────────────────────
+function populateInfo(d){
+  if(!d || d.error) return;
+  $('loc-label').textContent = d.location || '—';
+  $('ft-dawn').textContent    = d.dawn    || '–';
+  $('ft-sunrise').textContent = d.sunrise || '–';
+  $('ft-sunset').textContent  = d.sunset  || '–';
+  $('ft-dusk').textContent    = d.dusk    || '–';
+  $('ft-dusk-label').textContent = d.twilight_label || 'Tageslicht bis';
+
+  $('i-sunrise').textContent = d.sunrise || '–';
+  $('i-sunset').textContent  = d.sunset  || '–';
+  $('i-dawn').textContent    = d.dawn    || '–';
+  $('i-dusk').textContent    = d.dusk    || '–';
+  $('i-dusk-label').textContent = d.twilight_label || 'Tageslicht bis';
+
+  const mins = d.day_minutes || 0;
+  $('daybar-fill').style.width = Math.min(100, (mins/1020)*100) + '%';
+  $('daybar-label').textContent = `${Math.floor(mins/60)}h ${mins%60}min Tageslicht`;
+
+  const pct = d.moon_phase_pct || 0;
+  $('moon-name').textContent = d.moon_phase_name || '–';
+  $('moon-pct').textContent  = pct + '% beleuchtet';
+  $('moon-glyph').textContent = moonEmoji(d.moon_phase_name, pct);
+  $('i-moon-rise').textContent = d.moon_rise || '–';
+  $('i-moon-set').textContent  = d.moon_set  || '–';
+
+  $('i-tom-rise').textContent = d.tomorrow_sunrise || '–';
+  $('i-tom-set').textContent  = d.tomorrow_sunset  || '–';
+  $('i-tom-dusk').textContent = d.tomorrow_dusk    || '–';
+}
+
+function moonEmoji(name, pct){
+  if(!name) return '🌙';
+  if(name==='Neumond')  return '🌑';
+  if(name==='Vollmond') return '🌕';
+  if(name.includes('↑')) return '🌓';
+  if(name.includes('↓')) return '🌗';
+  if(name==='Zunehmend') return pct<50?'🌒':'🌔';
+  if(name==='Abnehmend') return pct>50?'🌖':'🌘';
+  return '🌙';
+}
+
+// ?time=HH:MM overrides current time (testing)
+const URL_TIME = new URLSearchParams(location.search).get("time");
+
+// Sky gradients per phase
+function getSkyGradient(nowMin, riseMin, setMin, dawnMin, duskMin){
+  if(nowMin === null || riseMin === null) 
+    return 'linear-gradient(180deg, #cfe8f7, #e8f4fb 55%, #f0f2f5)';
+
+  const dawn = dawnMin || riseMin - 60;
+  const dusk = duskMin || setMin  + 60;
+
+  // deep night
+  if(nowMin < dawn - 20 || nowMin > dusk + 20)
+    return 'linear-gradient(180deg, #05090f 0%, #0c1220 50%, #1a2038 100%)';
+
+  // morning twilight (dawn → sunrise)
+  if(nowMin <= riseMin)
+    return 'linear-gradient(180deg, #160a28 0%, #7a2848 30%, #d85820 60%, #f0a840 100%)';
+
+  // golden hour morning (sunrise + 75min)
+  if(nowMin < riseMin + 75)
+    return 'linear-gradient(180deg, #4878b8 0%, #80b8e0 45%, #f5e0a0 100%)';
+
+  // full day
+  if(nowMin < setMin - 75)
+    return 'linear-gradient(180deg, #cfe8f7 0%, #e8f4fb 55%, #f0f2f5 100%)';
+
+  // golden hour evening (75min before sunset)
+  if(nowMin < setMin)
+    return 'linear-gradient(180deg, #5868a8 0%, #c07838 50%, #f0c060 100%)';
+
+  // evening twilight (sunset → dusk)
+  if(nowMin <= dusk)
+    return 'linear-gradient(180deg, #120820 0%, #502858 35%, #b84828 65%, #e07840 100%)';
+
+  // deep night again
+  return 'linear-gradient(180deg, #05090f 0%, #0c1220 50%, #1a2038 100%)';
+}
+
+// Update footer card text color for dark sky backgrounds
+function updateSkyTheme(nowMin, riseMin, setMin, dawnMin, duskMin){
+  const dawn = dawnMin || riseMin - 60;
+  const dusk = duskMin || setMin  + 60;
+  const isDark = nowMin < dawn - 20 || nowMin > dusk + 20
+    || (nowMin <= riseMin && nowMin >= dawn - 20)
+    || (nowMin >= setMin && nowMin <= dusk + 20);
+
+  const skyArea = document.querySelector('.sky-area');
+  skyArea.style.background = getSkyGradient(nowMin, riseMin, setMin, dawnMin, duskMin);
+
+  // loc-label: readable on both light and dark
+  const locLabel = document.getElementById('loc-label');
+  if(isDark){
+    locLabel.style.background = 'rgba(0,0,0,0.35)';
+    locLabel.style.color = 'rgba(255,255,255,0.85)';
+    locLabel.style.borderColor = 'rgba(255,255,255,0.15)';
+  } else {
+    locLabel.style.background = 'rgba(255,255,255,0.75)';
+    locLabel.style.color = '';
+    locLabel.style.borderColor = '';
+  }
+}
+
+function updateNow(){
+  let ts;
+  if(URL_TIME && /^\d{2}:\d{2}$/.test(URL_TIME)){
+    ts = URL_TIME;
+  } else {
+    const now = new Date();
+    ts = String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+  }
+  $("ft-now").textContent = ts;
+  if(todayData && !todayData.error){
+    todayData.now = ts;
+    drawArc(todayData);
+    // update sky
+    const nowMin  = timeToMin(ts);
+    const riseMin = timeToMin(todayData.sunrise);
+    const setMin  = timeToMin(todayData.sunset);
+    const dawnMin = timeToMin(todayData.dawn);
+    const duskMin = timeToMin(todayData.dusk);
+    updateSkyTheme(nowMin, riseMin, setMin, dawnMin, duskMin);
+  }
+}
+
+async function loadToday(){
+  try{
+    const r = await fetch('/api/today');
+    const d = await r.json();
+    todayData = d;
+    populateInfo(d);
+    setTimeout(() => drawArc(d), 50);
+    updateNow();
+  } catch(e){ console.error(e); }
+}
+
+setInterval(updateNow, 60000);
+setInterval(loadToday, 5*60*1000);
+window.addEventListener('resize', () => { if(todayData) drawArc(todayData); });
+
+// WebSocket
+let ws;
+function connectWS(){
+  const proto = location.protocol==='https:'?'wss':'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen  = () => { $('conn-dot').className='ok'; };
+  ws.onclose = () => { $('conn-dot').className='err'; setTimeout(connectWS,3000); };
+  ws.onerror = () => { $('conn-dot').className='err'; };
+  ws.onmessage = e => {
+    try{
+      const msg = JSON.parse(e.data);
+      if(msg.type==='status') applyStatus(msg.data);
+      else if(msg.type==='command')
+        appendEntry(msg.sender, msg.command, msg.responses, new Date().toTimeString().slice(0,8));
+    }catch(_){}
+  };
+}
+function applyStatus(d){
+  if(!d) return;
+  $('sim-badge').className = d.simulator ? 'on' : '';
+  if(d.simulator) $('conn-dot').className = 'ok';
+}
+
+// Simulator
+async function sendCmd(cmd){
+  cmd = cmd.trim(); if(!cmd) return;
+  $('sim-input').value = '';
+  try{
+    const r = await fetch('/api/simulate', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({command:cmd})});
+    const d = await r.json();
+    appendEntry('simulator', cmd, d.responses||[], d.timestamp||'');
+  }catch(e){ appendEntry('simulator', cmd, ['Fehler: Server nicht erreichbar'], ''); }
+}
+function appendEntry(sender, cmd, responses, time){
+  const empty = $('sim-empty'); if(empty) empty.remove();
+  const log = $('sim-log');
+  const entry = document.createElement('div'); entry.className = 'sim-entry';
+  entry.innerHTML = `<div class="sim-cmd-row">
+    <span class="sim-ts">${esc(time)}</span>
+    <span class="sim-who">${esc(sender)}</span>
+    <span class="sim-cmd">&nbsp;${esc(cmd)}</span></div>`
+    + (responses||[]).map(r => `<div class="sim-resp-row">
+      <span class="sim-arrow">→</span>
+      <span class="sim-resp">${esc(r)}</span></div>`).join('');
+  log.appendChild(entry); log.scrollTop = log.scrollHeight;
+}
+$('sim-send').addEventListener('click', () => sendCmd($('sim-input').value));
+$('sim-input').addEventListener('keydown', e => { if(e.key==='Enter') sendCmd($('sim-input').value); });
+document.querySelectorAll('.qcmd').forEach(el =>
+  el.addEventListener('click', () => sendCmd(el.dataset.cmd)));
+
+// Settings
+async function loadStatus(){
+  try{
+    const r = await fetch('/api/status'); const d = await r.json();
+    const sim = d.simulator;
+    const connected = d.mesh_connected;
+    const mesh = d.mesh || {};
+
+    $('st-mode').textContent = sim ? 'Simulator' : 'MeshCore Live';
+    $('st-mode').className   = 'stval ' + (sim ? 'sim' : 'ok');
+    $('st-mesh').textContent = sim ? 'Simulator' : (connected ? 'Verbunden' : 'Getrennt');
+    $('st-uptime').textContent = d.uptime || '–';
+    $('st-cmd').textContent  = d.last_command  || '–';
+    $('st-resp').textContent = d.last_response || '–';
+
+    // Sync mode toggle
+    $('btn-sim').classList.toggle('active',  sim);
+    $('btn-real').classList.toggle('active', !sim);
+    $('mesh-real-fields').style.display = sim ? 'none' : 'block';
+
+    // Status dot
+    const dot = $('mesh-dot');
+    const txt = $('mesh-status-txt');
+    if(sim){
+      dot.className = 'mesh-status-dot sim';
+      txt.textContent = 'Simulator aktiv';
+    } else if(connected){
+      dot.className = 'mesh-status-dot ok';
+      txt.textContent = `Verbunden · ${mesh.host}:${mesh.port}`;
+    } else {
+      dot.className = 'mesh-status-dot err';
+      txt.textContent = 'Getrennt';
+    }
+
+    // Fill real-mode fields from current config
+    if(mesh.host)    $('cfg-host').value    = mesh.host;
+    if(mesh.port)    $('cfg-port').value    = mesh.port;
+    if(mesh.channel_idx !== undefined) $('cfg-chanidx').value = mesh.channel_idx;
+    if(mesh.scope)   $('cfg-scope').value   = mesh.scope;
+
+    applyStatus(d);
+  }catch(_){}
+}
+
+// Mode toggle
+let _pendingMode = null;
+function setMode(simulator){
+  _pendingMode = simulator;
+  $('btn-sim').classList.toggle('active',  simulator);
+  $('btn-real').classList.toggle('active', !simulator);
+  $('mesh-real-fields').style.display = simulator ? 'none' : 'block';
+}
+
+$('save-mesh').addEventListener('click', async () => {
+  const simulator = _pendingMode !== null
+    ? _pendingMode
+    : $('btn-sim').classList.contains('active');
+
+  const body = { simulator };
+  if(!simulator){
+    body.host        = $('cfg-host').value.trim()    || '192.168.4.2';
+    body.port        = parseInt($('cfg-port').value) || 4403;
+    body.channel_idx = parseInt($('cfg-chanidx').value) || 0;
+    body.scope       = $('cfg-scope').value.trim()   || '*';
+  }
+
+  try{
+    await fetch('/api/config/mesh',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const ok = $('save-mesh-ok');
+    ok.style.opacity='1'; setTimeout(()=>ok.style.opacity='0', 2000);
+    await loadStatus();
+    _pendingMode = null;
+  }catch(_){}
+});
+function updatePreview(){
+  $('cfg-preview').textContent = `Stuttgart 13.06.  ↑05:18  ↓21:24  ${$('cfg-label').value}: 22:03`;
+}
+$('cfg-label').addEventListener('change', updatePreview); updatePreview();
+
+$('save-loc').addEventListener('click', async () => {
+  const city = $('cfg-city').value.trim();
+  const lat = parseFloat($('cfg-lat').value)||0;
+  const lon = parseFloat($('cfg-lon').value)||0;
+  const body = {default: city}; if(lat&&lon){body.lat=lat;body.lon=lon;}
+  try{ await fetch('/api/config',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    showOk(); await loadToday(); }catch(_){}
+});
+$('save-bot').addEventListener('click', async () => {
+  try{ await fetch('/api/config',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({twilight_label: $('cfg-label').value})});
+    showOk(); }catch(_){}
+});
+function showOk(){ $('save-ok').className='on'; setTimeout(()=>$('save-ok').className='',2000); }
+
+loadToday(); connectWS();
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+astral>=3.2
+aiohttp>=3.9
+pyyaml>=6.0
+meshcore>=0.1.0
