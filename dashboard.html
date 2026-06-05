@@ -524,72 +524,68 @@ function drawArc(data){
   const nowMin  = timeToMin(data.now);
   if(riseMin===null || setMin===null) return;
 
-  // X-axis window: 90 min before dawn to 90 min after dusk
-  const PAD_MIN = 90;
-  const winStart = (dawnMin||riseMin) - PAD_MIN;
-  const winEnd   = (duskMin||setMin)  + PAD_MIN;
+  // Full day window: 00:00 to 24:00 like Apple
+  const winStart = 0;
+  const winEnd   = 24 * 60;
   const winSpan  = winEnd - winStart;
 
-  const PAD_X = 32, PAD_TOP = 16, PAD_BOT = 28;
+  const PAD_X = 32, PAD_TOP = 20, PAD_BOT = 28;
   const LEFT  = PAD_X;
   const RIGHT = W - PAD_X;
-  const BASE  = H - PAD_BOT;   // horizon y
-  const TOP   = PAD_TOP;       // arc peak y
+  const BASE  = H - PAD_BOT;        // horizon y
+  const TOP   = PAD_TOP;            // arc peak y
+  const BELOW = BASE + (BASE - TOP) * 0.35;  // how far below horizon the arc dips
 
   function minToX(m){ return LEFT + ((m - winStart) / winSpan) * (RIGHT - LEFT); }
 
-  // arc y for a given minute (sine between rise and set)
+  // Two-half-sine arc: guaranteed to cross BASE exactly at riseMin and setMin
+  // Above horizon: half-sine rise→set (peak at noon)
+  // Below horizon: half-sine set→rise+24h (trough at midnight)
   function arcY(m){
-    const t = (m - riseMin) / (setMin - riseMin);
-    if(t <= 0 || t >= 1) return BASE;
-    return BASE - (BASE - TOP) * Math.sin(Math.PI * t);
-  }
-
-  // ── horizon line ──
-  ctx.strokeStyle = 'rgba(180,200,190,0.6)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.moveTo(0, BASE); ctx.lineTo(W, BASE);
-  ctx.stroke();
-
-  // ── hour labels on horizon ──
-  ctx.font = '9px DM Mono, monospace';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(90,110,130,0.7)';
-  // find first full hour in window
-  const firstH = Math.ceil(winStart / 60);
-  const lastH  = Math.floor(winEnd  / 60);
-  for(let h = firstH; h <= lastH; h++){
-    const x = minToX(h * 60);
-    if(x < LEFT || x > RIGHT) continue;
-    ctx.fillRect(x - 0.5, BASE, 1, 4);
-    if(h % 3 === 0){
-      ctx.fillStyle = 'rgba(90,110,130,0.55)';
-      ctx.fillText(String(h).padStart(2,'0')+':00', x, BASE + PAD_BOT - 6);
-      ctx.fillStyle = 'rgba(90,110,130,0.7)';
+    if(m >= riseMin && m <= setMin){
+      // Day arc: 0 at rise, 1 at noon, 0 at set
+      const t = (m - riseMin) / (setMin - riseMin);
+      return BASE - (BASE - TOP) * Math.sin(Math.PI * t);
+    } else {
+      // Night arc: 0 at set, -1 at midnight, 0 at rise (next day)
+      const nightDur = (riseMin + 24*60) - setMin;
+      // Normalise m: morning hours (before rise) shift by 24h
+      const mN = m < riseMin ? m + 24*60 : m;
+      const t = (mN - setMin) / nightDur;
+      return BASE + (BELOW - BASE) * Math.sin(Math.PI * t);
     }
   }
 
-  // ── twilight zones (coloured segments on horizon) ──
-  function horizonSegment(mA, mB, color){
-    if(mA===null || mB===null) return;
-    const x1 = minToX(mA), x2 = minToX(mB);
-    ctx.fillStyle = color;
-    ctx.fillRect(x1, BASE - 2, x2 - x1, 4);
-  }
-  horizonSegment(dawnMin, riseMin, 'rgba(232,144,90,0.55)');
-  horizonSegment(riseMin, setMin,  'rgba(230,200,74,0.45)');
-  horizonSegment(setMin,  duskMin, 'rgba(155,110,200,0.55)');
+  // ── horizon line ──
+  ctx.strokeStyle = 'rgba(150,160,170,0.65)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(LEFT, BASE); ctx.lineTo(RIGHT, BASE);
+  ctx.stroke();
 
-  // ── glow fill under arc ──
+  // ── hour labels ──
+  ctx.font = '9px DM Mono, monospace';
+  ctx.textAlign = 'center';
+  for(let h = 0; h <= 24; h += 3){
+    const x = minToX(h * 60);
+    if(x < LEFT || x > RIGHT) continue;
+    ctx.fillStyle = 'rgba(90,110,130,0.4)';
+    ctx.fillRect(x - 0.5, BASE - 2, 1, 5);
+    ctx.fillStyle = 'rgba(90,110,130,0.5)';
+    ctx.fillText(String(h).padStart(2,'0')+':00', x, BASE + PAD_BOT - 6);
+  }
+
+  // horizon segments removed – colour handled by the arc curve itself
+
+  // ── glow fill under above-horizon arc ──
   const fillG = ctx.createLinearGradient(0, TOP, 0, BASE);
-  fillG.addColorStop(0,   'rgba(230,200,74,0.18)');
-  fillG.addColorStop(0.7, 'rgba(230,200,74,0.06)');
+  fillG.addColorStop(0,   'rgba(230,200,74,0.20)');
+  fillG.addColorStop(0.7, 'rgba(230,200,74,0.07)');
   fillG.addColorStop(1,   'rgba(230,200,74,0)');
   ctx.beginPath();
   ctx.fillStyle = fillG;
-  const STEPS = 100;
+  const STEPS = 200;
   ctx.moveTo(minToX(riseMin), BASE);
   for(let i = 0; i <= STEPS; i++){
     const m = riseMin + (setMin - riseMin) * (i / STEPS);
@@ -599,55 +595,90 @@ function drawArc(data){
   ctx.closePath();
   ctx.fill();
 
-  // ── dawn / day / dusk arcs ──
-  function drawSeg(mA, mB, color, lw){
-    if(mA===null || mB===null) return;
-    const clampA = Math.max(mA, riseMin - (riseMin - mA));  // allow below horizon
-    ctx.beginPath();
-    ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round';
-    ctx.setLineDash([]);
-    const steps = 60;
-    for(let i = 0; i <= steps; i++){
-      const m = mA + (mB - mA) * (i / steps);
-      const x = minToX(m);
-      // below-horizon segments stay at BASE
-      const y = (m < riseMin || m > setMin) ? BASE : arcY(m);
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  }
+  // ── full arc curve ──
+  // Draw in order: night dashed → dawn orange → day gold → dusk purple → night dashed
+  // All segments follow arcY() continuously – no flat lines
+  function drawFullCurve(){
+    const steps = 400;
+    ctx.lineCap = 'round';
 
-  if(dawnMin!==null) drawSeg(dawnMin, riseMin, 'rgba(232,144,90,0.75)', 2);
-  drawSeg(riseMin, setMin, '#c0960e', 2.5);
-  if(duskMin!==null) drawSeg(setMin, duskMin, 'rgba(155,110,200,0.75)', 2);
+    // Helper: draw a segment from mA to mB with given style
+    function seg(mA, mB, color, lw, dashed){
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lw;
+      ctx.setLineDash(dashed ? [5, 6] : []);
+      const n = Math.max(40, Math.round((mB - mA) / (24*60) * steps));
+      for(let i = 0; i <= n; i++){
+        const m = mA + (mB - mA) * (i / n);
+        const x = minToX(m), y = arcY(m);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    const night1End   = dawnMin !== null ? dawnMin : riseMin;
+    const night2Start = duskMin !== null ? duskMin : setMin;
+
+    // Night before dawn (dashed blue)
+    seg(0,           night1End,   'rgba(100,130,190,0.45)', 1.5, true);
+    // Dawn (orange)
+    if(dawnMin !== null) seg(dawnMin, riseMin, 'rgba(232,144,90,0.9)', 2, false);
+    // Day (gold)
+    seg(riseMin,     setMin,      '#c0960e', 2.5, false);
+    // Dusk (purple)
+    if(duskMin !== null) seg(setMin, duskMin, 'rgba(155,110,200,0.9)', 2, false);
+    // Night after dusk (dashed blue)
+    seg(night2Start, 24*60,       'rgba(100,130,190,0.45)', 1.5, true);
+
+    ctx.setLineDash([]);
+  }
+  drawFullCurve();
 
   // ── sunrise / sunset markers ──
   [riseMin, setMin].forEach(m => {
     const x = minToX(m);
-    ctx.beginPath(); ctx.arc(x, BASE, 5, 0, Math.PI*2);
+    ctx.beginPath(); ctx.arc(x, BASE, 4, 0, Math.PI*2);
     ctx.fillStyle = '#c0960e'; ctx.fill();
-    ctx.beginPath(); ctx.arc(x, BASE, 2.5, 0, Math.PI*2);
+    ctx.beginPath(); ctx.arc(x, BASE, 2, 0, Math.PI*2);
     ctx.fillStyle = '#fff'; ctx.fill();
   });
 
   // ── now: sun dot ──
   if(nowMin !== null){
     const nx = minToX(nowMin);
-    const ny = (nowMin >= riseMin && nowMin <= setMin) ? arcY(nowMin) : BASE;
+    const ny = arcY(nowMin);
     const isDay = nowMin >= riseMin && nowMin <= setMin;
+    const isTwilight = (!isDay) && (
+      (dawnMin !== null && nowMin >= dawnMin && nowMin < riseMin) ||
+      (duskMin !== null && nowMin > setMin && nowMin <= duskMin)
+    );
 
-    // soft glow
-    const gr = ctx.createRadialGradient(nx, ny, 0, nx, ny, isDay ? 28 : 16);
-    gr.addColorStop(0, isDay ? 'rgba(230,200,74,0.35)' : 'rgba(100,140,200,0.25)');
-    gr.addColorStop(1, 'rgba(230,200,74,0)');
-    ctx.beginPath(); ctx.arc(nx, ny, isDay ? 28 : 16, 0, Math.PI*2);
+    // glow
+    const glowR = isDay ? 32 : 18;
+    const gr = ctx.createRadialGradient(nx, ny, 0, nx, ny, glowR);
+    if(isDay){
+      gr.addColorStop(0, 'rgba(230,200,74,0.45)');
+      gr.addColorStop(0.4, 'rgba(230,200,74,0.18)');
+    } else if(isTwilight){
+      gr.addColorStop(0, 'rgba(232,144,90,0.35)');
+      gr.addColorStop(0.4, 'rgba(232,144,90,0.12)');
+    } else {
+      gr.addColorStop(0, 'rgba(80,110,180,0.30)');
+      gr.addColorStop(0.4, 'rgba(80,110,180,0.08)');
+    }
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.beginPath(); ctx.arc(nx, ny, glowR, 0, Math.PI*2);
     ctx.fillStyle = gr; ctx.fill();
 
-    // disc
-    ctx.beginPath(); ctx.arc(nx, ny, isDay ? 7 : 5, 0, Math.PI*2);
-    ctx.fillStyle = isDay ? '#e6c84a' : '#7090c0'; ctx.fill();
-    ctx.beginPath(); ctx.arc(nx, ny, isDay ? 3.5 : 2.5, 0, Math.PI*2);
-    ctx.fillStyle = '#fff'; ctx.fill();
+    // disc – bigger when day
+    const discR = isDay ? 10 : 6;
+    const innerR = isDay ? 5 : 3;
+    const discColor = isDay ? '#e6c84a' : isTwilight ? '#e8905a' : '#5a7aaf';
+    ctx.beginPath(); ctx.arc(nx, ny, discR, 0, Math.PI*2);
+    ctx.fillStyle = discColor; ctx.fill();
+    ctx.beginPath(); ctx.arc(nx, ny, innerR, 0, Math.PI*2);
+    ctx.fillStyle = isDay ? 'rgba(255,255,220,0.9)' : 'rgba(200,210,255,0.7)'; ctx.fill();
   }
 }
 
