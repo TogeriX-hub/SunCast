@@ -1,0 +1,17 @@
+[Unit]
+Description=SunCast – Astronomische Lichtzeiten MeshCore-Bot
+After=network.target
+# Läuft parallel zu WarnBridge (warnbridge.service) auf demselben Pi
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/suncast
+ExecStart=/usr/bin/python3 /home/pi/suncast/suncast.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
