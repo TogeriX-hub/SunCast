@@ -12,10 +12,19 @@ from pathlib import Path
 from typing import Optional, Callable, Awaitable
 from zoneinfo import ZoneInfo
 
+import math
+
 import yaml
 from astral import LocationInfo
 from astral.sun import sun, dusk, dawn
 from astral.moon import moonrise, moonset, phase as moon_phase
+
+try:
+    import ephem
+    EPHEM_AVAILABLE = True
+except ImportError:
+    EPHEM_AVAILABLE = False
+    logger.warning("ephem library not installed – moon illumination will be approximate")
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +126,7 @@ def setup_logging(level: str = "INFO"):
 
 
 def get_moon_phase_name(phase_days: float) -> tuple[str, int]:
-    pct = int((phase_days / 28.0) * 100)
-    pct = max(0, min(100, pct))
+    # Phase name from astral's 0-27.99 day value
     if phase_days < 1.75 or phase_days >= 26.25:
         name = "Neumond"
     elif phase_days < 7.0:
@@ -135,7 +143,29 @@ def get_moon_phase_name(phase_days: float) -> tuple[str, int]:
         name = "Halbmond (↓)"
     else:
         name = "Abnehmend"
+    # Fallback illumination via cosine (used only if ephem unavailable)
+    pct = int((1 - math.cos(math.pi * phase_days / 14.5)) / 2 * 100)
+    pct = max(0, min(100, pct))
     return name, pct
+
+
+def get_moon_illumination(target_date: date, at_time=None) -> int:
+    """
+    Returns accurate moon illumination % using ephem.
+    at_time: aware datetime for current illumination; if None uses noon UTC of target_date.
+    Falls back to cosine approximation if ephem not available.
+    """
+    if not EPHEM_AVAILABLE:
+        phase_days = moon_phase(target_date)
+        return int((1 - math.cos(math.pi * phase_days / 14.5)) / 2 * 100)
+
+    moon = ephem.Moon()
+    if at_time is not None:
+        utc_time = at_time.astimezone(timezone.utc)
+        moon.compute(utc_time.strftime("%Y/%m/%d %H:%M:%S"))
+    else:
+        moon.compute(f"{target_date.year}/{target_date.month:02d}/{target_date.day:02d} 12:00:00")
+    return round(float(moon.phase))
 
 
 def resolve_location(city_name: str, cfg_location: dict) -> Optional[LocationInfo]:
@@ -441,8 +471,13 @@ class SunCastBot:
 
         loc = self._get_default_location()
         target_date = date_arg or date.today()
-        phase_val = moon_phase(target_date)
-        phase_name, phase_pct = get_moon_phase_name(phase_val)
+        phase_val  = moon_phase(target_date)
+        phase_name, _ = get_moon_phase_name(phase_val)
+        # Use current time for today, noon for future/past dates
+        if date_arg is None:
+            phase_pct = get_moon_illumination(target_date, at_time=datetime.now(timezone.utc))
+        else:
+            phase_pct = get_moon_illumination(target_date)
         datum_str = target_date.strftime("%d.%m.")
 
         if loc:
@@ -514,7 +549,8 @@ class SunCastBot:
             twilight_end_tom = dusk(loc.observer, date=tomorrow, tzinfo=tz, depression=6)
 
             phase_val  = moon_phase(today)
-            phase_name, phase_pct = get_moon_phase_name(phase_val)
+            phase_name, _ = get_moon_phase_name(phase_val)
+            phase_pct = get_moon_illumination(today, at_time=datetime.now(timezone.utc))
             try:
                 rise = moonrise(loc.observer, date=today, tzinfo=tz)
                 sett = moonset(loc.observer, date=today, tzinfo=tz)
