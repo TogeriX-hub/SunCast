@@ -519,8 +519,8 @@ class SunCastBot:
         sh, sm = divmod(shortest_min, 60)
 
         line1 = f"{loc.name} heute: {h}h {m}min Tageslicht"
-        line2 = (f"Max {longest_date.strftime('%d.%m.')}: {lh}h{lm}min  "
-                 f"Min {shortest_date.strftime('%d.%m.')}: {sh}h{sm}min")
+        line2 = (f"Max {longest_date.strftime('%d.%m.')}: {lh}h {lm:02d}min  "
+                 f"Min {shortest_date.strftime('%d.%m.')}: {sh}h {sm:02d}min")
         combined = f"{line1}  |  {line2}"
         if len(combined) <= 120:
             return [combined]

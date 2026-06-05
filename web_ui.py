@@ -81,7 +81,7 @@ class WebUI:
         return web.json_response({
             "command":   command,
             "responses": responses,
-            "timestamp": datetime.now().strftime("%H:%M:%S"),
+            "timestamp": datetime.now().astimezone().strftime("%H:%M:%S"),
         })
 
     async def _handle_config_location(self, request: web.Request) -> web.Response:
