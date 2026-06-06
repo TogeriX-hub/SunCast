@@ -19,6 +19,8 @@ from astral import LocationInfo
 from astral.sun import sun, dusk, dawn
 from astral.moon import moonrise, moonset, phase as moon_phase
 
+logger = logging.getLogger(__name__)
+
 try:
     import ephem
     EPHEM_AVAILABLE = True
@@ -26,13 +28,12 @@ except ImportError:
     EPHEM_AVAILABLE = False
     logger.warning("ephem library not installed – moon illumination will be approximate")
 
-logger = logging.getLogger(__name__)
-
 try:
-    from meshcore import MeshCore
+    from meshcore import MeshCore, EventType
     MESHCORE_AVAILABLE = True
 except ImportError:
     MESHCORE_AVAILABLE = False
+    EventType = None
     logger.warning("meshcore library not installed – simulator mode only")
 
 # ── City coordinate table ──────────────────────────────────────────────────
@@ -249,8 +250,8 @@ class MeshClient:
         try:
             self._mc = await MeshCore.create_tcp(self.host, self.port)
             self._connected = True
-            logger.info("MeshCore verbunden: %s:%d (Channel %s)",
-                        self.host, self.port)
+            logger.info("MeshCore verbunden: %s:%d (channel_idx=%d)",
+                        self.host, self.port, self.channel_idx)
             await self._set_scope()
             return True
         except Exception as e:
@@ -303,10 +304,13 @@ class MeshClient:
     async def listen_loop(self, on_command):
         """
         Receive loop: waits for channel messages and calls
-        on_command(sender, text) for every message starting with '/'.
+        on_command(sender, text) for every message containing a '/' command.
 
         In simulator mode this loop just sleeps – commands come via
         the dashboard's /api/simulate endpoint instead.
+
+        MeshCore message format: "NodeName  | SCOPE: /befehl"
+        text.startswith("/") would always fail – extract from first "/" instead.
         """
         if self.simulator:
             logger.info("MeshClient: receive loop inaktiv im Simulator-Modus")
@@ -318,34 +322,42 @@ class MeshClient:
             if not self._connected:
                 return
 
-        logger.info("MeshClient: Lausche auf %s (channel_idx=%d)",
-                    self.channel, self.channel_idx)
+        logger.info("MeshClient: Lausche auf channel_idx=%d", self.channel_idx)
 
         while True:
             try:
-                # meshcore library: wait for next incoming message
-                msg = await self._mc.wait_for_msg()
+                # meshcore v2.3.7: event-based receive, no wait_for_msg()
+                event = await self._mc.wait_for_event(EventType.CHANNEL_MSG_RECV)
+                if event is None:
+                    continue
 
-                sender  = getattr(msg, "sender", "unknown")
-                channel = getattr(msg, "channel_idx", -1)
-                text    = getattr(msg, "text", "") or ""
+                raw_text = event.payload.get("text", "") or ""
+                channel  = event.payload.get("channel_idx", -1)
+                # sender info lives in attributes; fall back gracefully
+                sender   = event.attributes.get("sender", "unknown") if event.attributes else "unknown"
 
                 # Only process messages on our channel
                 if channel != self.channel_idx:
                     continue
 
-                logger.debug("MeshCore IN [ch%d] %s: %s", channel, sender, text)
-                await self._notify_ws("in", sender, text)
+                logger.debug("MeshCore IN [ch%d] %s: %s", channel, sender, raw_text)
+                await self._notify_ws("in", sender, raw_text)
 
-                if text.strip().startswith("/"):
-                    await on_command(sender, text.strip())
+                # MeshCore format: "NodeName  | DE.BW: /befehl args"
+                # Never do startswith("/") on raw_text – extract from first "/"
+                cmd = None
+                if "/" in raw_text:
+                    cmd = raw_text[raw_text.index("/"):].strip()
+
+                if cmd and cmd.startswith("/"):
+                    logger.debug("Befehl erkannt: %s (raw: %s)", cmd, raw_text)
+                    await on_command(sender, cmd)
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error("MeshCore receive Fehler: %s", e)
                 self._connected = False
-                # Reconnect after brief pause
                 await asyncio.sleep(10)
                 await self.connect()
 
